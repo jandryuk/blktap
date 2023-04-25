@@ -102,9 +102,6 @@ connect_tap(vbd_t * const device)
      */
     ASSERT(!device->connected);
 
-    /*
-     * The physical-device XenStore key has not been written yet.
-     */
     if (!device->tap) {
         DBG(device, "no tapdisk yet\n");
         err = ESRCH;
@@ -349,8 +346,8 @@ out:
 /*
  * Returns 0 on success, a positive error code otherwise.
  *
- * If tapdisk is not yet available (the physical-device key has not yet been
- * written), ESRCH is returned.
+ * If tapdisk is not yet available (the physical-device-path key has not yet
+ * been written), ESRCH is returned.
  */
 static inline int
 xenbus_connect(vbd_t *device) {
@@ -360,7 +357,7 @@ xenbus_connect(vbd_t *device) {
 
     err = connect_tap(device);
     /*
-     * No tapdisk yet (the physical-device XenStore key has not been written).
+     * No tapdisk yet.
      */
     if (err == ESRCH)
         goto out;

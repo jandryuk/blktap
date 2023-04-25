@@ -360,7 +360,8 @@ physical_device_path_changed(vbd_t *device) {
 
 	/*
 	 * The front-end might have switched to state Connected before
-	 * physical-device is written. Check it's state and connect if necessary.
+	 * physical-device-path is written. Check it's state and connect if
+	 * necessary.
 	 *
 	 * TODO blkback ignores connection errors, let's do the same until we
 	 * know better.
@@ -380,162 +381,6 @@ out:
 	free(s);
 done:
 	return err;
-}
-
-/**
- * Retrieves the minor number and locates the corresponding tapdisk, storing
- * all relevant information in @device. Then, it attempts to advance the Xenbus
- * state as it might be that everything is ready and all that was missing was
- * the physical device.
- *
- * We might already have read the major/minor, but if the physical-device
- * key triggered we need to make sure it hasn't changed. This also protects us
- * against restarted transactions.
- *
- * Returns 0 on success, a negative error code otherwise.
- */
-static int
-physical_device_changed(vbd_t *device) {
-
-    char * s = NULL, *p = NULL, *end = NULL;
-    int err = 0, major = 0, minor = 0;
-    unsigned int info;
-
-    ASSERT(device);
-
-    INFO(device, "physical_device_changed\n");
-
-    /*
-     * Get the minor.
-     */
-    s = tapback_device_read(device, XBT_NULL, PHYS_DEV_KEY);
-    if (!s) {
-        err = -errno;
-        if (err != -ENOENT)
-            WARN(device, "failed to read the physical-device: %s\n",
-                    strerror(-err));
-        goto out;
-    }
-
-    if (strlen(s) == 0) {
-	    /* empty string is a missing device */
-	    err = -ENOENT;
-	    goto out;
-    }
-
-    /*
-     * The XenStore key physical-device contains "major:minor" in hex.
-     */
-    p = strtok(s, ":");
-    if (!p) {
-        WARN(device, "malformed physical device '%s'\n", s);
-        err = -EINVAL;
-        goto out;
-    }
-    major = strtol(p, &end, 16);
-    if (*end != 0 || end == p) {
-        WARN(device, "malformed physical device '%s'\n", s);
-        err = -EINVAL;
-        goto out;
-    }
-    p = strtok(NULL, ":");
-	if (unlikely(!p)) {
-        WARN(device, "malformed physical device '%s'\n", s);
-        err = -EINVAL;
-        goto out;
-	}
-    minor = strtol(p, &end, 16);
-    if (*end != 0 || end == p) {
-        WARN(device, "malformed physical device '%s'\n", s);
-        err = -EINVAL;
-        goto out;
-    }
-
-    if ((device->major >= 0 || device->minor >= 0) &&
-            (major != device->major || minor != device->minor)) {
-        WARN(device, "changing physical device from %x:%x to %x:%x not "
-                "supported\n", device->major, device->minor, major, minor);
-        err = -ENOSYS;
-        goto out;
-    }
-
-    if (major != tapdev_major) {
-        WARN(device, "ignoring non-blktap2 physical device: %d\n", major);
-        err = -EINVAL;
-        goto out;
-    }
-
-    device->major = major;
-    device->minor = minor;
-
-    device->tap = malloc(sizeof(*device->tap));
-    if (!device->tap) {
-        err = -ENOMEM;
-        goto out;
-    }
-
-    /*
-     * XXX If the physical-device key has been written we expect a tapdisk to
-     * have been created. If tapdisk is created after the physical-device key
-     * is written we have no way of being notified, so we will not be able to
-     * advance the back-end state.
-     */
-
-    DBG(device, "need to find tapdisk serving minor=%d\n", device->minor);
-
-    err = find_tapdisk(device->minor, device->tap);
-    if (err) {
-        WARN(device, "error looking for tapdisk: %s\n", strerror(-err));
-        goto out;
-    }
-
-    INFO(device, "found tapdisk[%d], for %d:%d\n", device->tap->pid, device->major, device->minor);
-
-    /*
-     * get the VBD parameters from the tapdisk
-     */
-    if ((err = tap_ctl_info(device->tap->pid, &device->sectors,
-                    &device->sector_size, &info,
-                    device->minor))) {
-        WARN(device, "error retrieving disk characteristics: %s\n",
-                strerror(-err));
-        goto out;
-    }
-
-	err = tapback_device_printf(device, XBT_NULL, "kthread-pid", false, "%d",
-		device->tap->pid);
-	if (unlikely(err)) {
-		WARN(device, "warning: failed to write kthread-pid: %s\n",
-				strerror(-err));
-		goto out;
-	}
-
-    if (device->sector_size & 0x1ff || device->sectors <= 0) {
-        WARN(device, "warning: unexpected device characteristics: sector "
-                "size=%d, sectors=%llu\n", device->sector_size,
-				device->sectors);
-    }
-
-    /*
-     * The front-end might have switched to state Connected before
-     * physical-device is written. Check it's state and connect if necessary.
-     *
-     * TODO blkback ignores connection errors, let's do the same until we
-     * know better.
-     */
-    err = -frontend_changed(device, device->frontend_state);
-    if (err)
-        WARN(device, "failed to switch state: %s (error ignored)\n",
-                strerror(-err));
-    err = 0;
-out:
-    if (err) {
-        free(device->tap);
-        device->tap = NULL;
-        device->sector_size = device->sectors = device->info = 0;
-    }
-    free(s);
-    return err;
 }
 
 /**
@@ -607,9 +452,9 @@ out:
  * FIXME This function REQUIRES the device->frontend_path member to be
  * populated, and this is done by frontend().
  *
- * Connecting to the front-end requires the physical-device key to have been
- * written. This function will attempt to connect anyway, and connecting will
- * fail half-way through. This is expected.
+ * Connecting to the front-end requires the physical-device-path key to have
+ * been written. This function will attempt to connect anyway, and connecting
+ * will fail half-way through. This is expected.
  *
  * Returns 0 in success, -errno on failure.
  */
@@ -697,7 +542,7 @@ hotplug_status_changed(vbd_t * const device) {
              * Ignore connection errors as the front-end might not yet be
              * ready. blkback doesn't wait for this XenStore key to be written,
              * so we choose to handle this the same way we do with
-             * physical-device.
+             * physical-device-path.
              */
             INFO(device, "failed to connect to the front-end: %s "
                     "(error ignored)\n", strerror(err));
@@ -755,18 +600,6 @@ reconnect(vbd_t *device) {
             WARN(device, "failed to watch front-end path: %s\n",
                     strerror(-err));
         goto out;
-    }
-
-    err = physical_device_changed(device);
-    if (err) {
-        if (err == -ENOENT) {
-            DBG(device, "no physical device yet\n");
-            err = 0;
-        } else {
-            WARN(device, "failed to retrieve physical device information: "
-                    "%s\n", strerror(-err));
-            goto out;
-        }
     }
 
     err = hotplug_status_changed(device);
@@ -892,12 +725,10 @@ tapback_backend_probe_device(backend_t *backend,
          * TODO Replace this with a despatch table mapping XenStore keys to
          * callbacks.
          *
-         * XXX physical_device_changed() and hotplug_status_changed() require
-         * frontend() to have been called beforehand. This is achieved by
-         * calling reconnect by calling reconnect() when the VBD is created.
+	 * XXX hotplug_status_changed() require frontend() to have been called
+	 * beforehand. This is achieved by calling reconnect() when the VBD is
+	 * created.
          */
-        if (!strcmp(PHYS_DEV_KEY, comp))
-            err = physical_device_changed(device);
         if (!strcmp(PHYS_DEV_PATH_KEY, comp))
 		err = physical_device_path_changed(device);
         else if (!strcmp(FRONTEND_KEY, comp))
