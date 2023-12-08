@@ -439,8 +439,8 @@ frontend_changed(vbd_t * const device, const XenbusState state)
 
     switch (state) {
         case XenbusStateInitialising:
-			if (device->hotplug_status_connected)
-				err = xenbus_switch_state(device, XenbusStateInitWait);
+            if (device->hotplug_status_connected)
+                err = xenbus_switch_state(device, XenbusStateInitWait);
             break;
         case XenbusStateInitialised:
     	case XenbusStateConnected:
