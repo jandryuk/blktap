@@ -508,7 +508,7 @@ tapback_backend_handle_otherend_watch(backend_t *backend,
      */
 	s = tapback_xs_read(device->backend->xs, XBT_NULL, "%s",
 			device->frontend_state_path);
-    if (!s) {
+    if (!s && !libxl_mode()) {
         err = errno;
 		/*
          * If the front-end XenBus node is missing, the XenBus device has been
@@ -531,6 +531,9 @@ tapback_backend_handle_otherend_watch(backend_t *backend,
                 }
             }
 		}
+    } else if (!s && libxl_mode()) {
+        WARN(device, "frontend disappeared!");
+        err = ENOENT;
     } else {
         state = strtol(s, &end, 0);
         if (*end != 0 || end == s) {
