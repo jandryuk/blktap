@@ -524,4 +524,14 @@ tapback_backend_destroy(backend_t *backend);
 
 bool verbose(void);
 
+/**
+ * Indicates when tapback is running in libxl compatibility mode.  libxl needs
+ * backends to transition to InitWait earlier than xapi/xenopds.
+ *
+ * Returns true if tapback is running in libxl compatibility mode and false
+ * otherwise.
+ */
+bool
+libxl_mode(void);
+
 #endif /* __TAPBACK_H__ */

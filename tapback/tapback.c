@@ -58,6 +58,7 @@
 const char tapback_name[] = "tapback";
 unsigned log_level;
 int tapdev_major;
+static bool opt_libxl_mode;
 
 struct list_head backends = LIST_HEAD_INIT(backends);
 
@@ -75,6 +76,12 @@ char *xenbus_strstate(const XenbusState xbs)
         [XenbusStateReconfigured] = "8 (reconfigured)"
     };
     return str[xbs];
+}
+
+bool
+libxl_mode(void)
+{
+    return opt_libxl_mode;
 }
 
 /**
@@ -513,7 +520,8 @@ usage(FILE * const stream, const char * const prog)
 			"\t[-h|--help]\n"
             "\t[-v|--verbose]\n"
 			"\t[-b]--nobarrier]\n"
-            "\t[-n|--name]\n", prog);
+            "\t[-n|--name]\n"
+            "\t[-l|--libxl]\n", prog);
 }
 
 extern char *optarg;
@@ -612,8 +620,8 @@ int main(int argc, char **argv)
             {"name", 0, NULL, 'n'},
             {"pidfile", 0, NULL, 'p'},
             {"domain", 0, NULL, 'x'},
-			{"nobarrier", 0, NULL, 'b'},
-
+            {"nobarrier", 0, NULL, 'b'},
+            {"libxl", 0, NULL, 'l'},
         };
         int c;
 
@@ -627,6 +635,9 @@ int main(int argc, char **argv)
             return 0;
         case 'd':
             opt_debug = true;
+            break;
+        case 'l':
+            opt_libxl_mode = true;
             break;
         case 'v':
             opt_verbose = true;
